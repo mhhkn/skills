@@ -198,8 +198,13 @@ var md=(function(s){var b=Uint8Array.from(atob(s),function(c){return c.charCodeA
 document.getElementById("rendered").innerHTML=marked.parse(md);
 document.getElementById("raw").innerHTML='<div class="raw-c">'+md.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")+'</div>';
 document.getElementById("metaInfo").textContent="共 "+md.length+" 字";
-var tks=marked.lexer(md),toc=document.getElementById("toc"),hc={};
-tks.forEach(function(t){if(t.type==="heading"&&t.depth<=4){var txt=t.text,s=txt.toLowerCase().replace(/[^\w\u4e00-\u9fff]+/g,"-").replace(/^-+|-+$/g,"")||"h";hc[s]=(hc[s]||0)+1;var id=s+(hc[s]>1?"-"+hc[s]:""),d=document.createElement("div");d.className="toc-item toc-h"+t.depth;d.textContent=txt;d.addEventListener("click",function(){var e=document.getElementById(id);if(e)e.scrollIntoView({behavior:"smooth",block:"start"})});toc.appendChild(d)}});
+// 从渲染后的 DOM 中提取 heading，直接 scrollIntoView，避免 ID 计算不一致
+var toc=document.getElementById("toc");
+document.querySelectorAll("#rendered h1,#rendered h2,#rendered h3,#rendered h4").forEach(function(h){
+  var d=document.createElement("div");d.className="toc-item toc-h"+h.tagName[1];d.textContent=h.textContent;
+  d.addEventListener("click",function(){h.scrollIntoView({behavior:"smooth",block:"start"})});
+  toc.appendChild(d)
+});
 document.getElementById("toggleBtn").addEventListener("click",function(){var r=document.getElementById("rendered"),w=document.getElementById("raw"),rv=w.classList.contains("on");r.classList.toggle("on",rv);w.classList.toggle("on",!rv);this.textContent=rv?"切换为纯文本":"切换为排版视图"});
 var ti=document.querySelectorAll(".toc-item"),hg=document.querySelectorAll("#rendered h1,#rendered h2,#rendered h3,#rendered h4");
 if(hg.length>0){window.addEventListener("scroll",function(){var cur=-1,st=window.scrollY+80;for(var i=0;i<hg.length;i++){if(hg[i].offsetTop<=st)cur=i}ti.forEach(function(it){it.style.fontWeight="normal";it.style.color=""});if(cur>=0&&ti[cur]){ti[cur].style.fontWeight="600";ti[cur].style.color="#1677ff"}})}
