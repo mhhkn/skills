@@ -117,8 +117,8 @@ if ($refs.Count -eq 0) {
 在生成导航页之前，先处理需求文档：
 
 1. 用 Glob 查找 `src/resources/` 下的 Markdown 文件：`Glob: src/resources/*需求*.md` 或 `Glob: src/resources/*.md`
-2. 如果找到需求文档（文件名含"需求"或"需求文档"关键词），复制到 `dist/resources/` 中，记录文件名
-3. 如果未找到，**先询问用户**需求文档的文件名是什么，然后再复制
+2. 如果找到需求文档（文件名含"需求"或"需求文档"关键词），将其转为 HTML 文件放入 `dist/resources/`（浏览器可以直接预览 HTML，而 `.md` 文件会触发下载），记录文件名
+3. 如果未找到，**先询问用户**需求文档的文件名是什么，然后再处理
 
 ```powershell
 # 查找需求文档
@@ -128,13 +128,60 @@ if (-not $reqDoc) {
 }
 if ($reqDoc) {
     New-Item -ItemType Directory -Force -Path "dist/resources" | Out-Null
-    Copy-Item $reqDoc.FullName "dist/resources/"
-    Write-Host "  Copied 需求文档: $($reqDoc.Name)"
+
+    # 读取 markdown 内容并转为 HTML，确保浏览器可预览（不触发下载）
+    $mdText = [System.IO.File]::ReadAllText($reqDoc.FullName)
+    $escaped = [System.Net.WebUtility]::HtmlEncode($mdText)
+    $htmlName = "$($reqDoc.BaseName).html"
+    $htmlContent = @"
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>$($reqDoc.BaseName)</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: #f5f5f5;
+      color: #333;
+      padding: 40px 20px;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      padding: 40px;
+    }
+    pre {
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+      font-size: 14px;
+      line-height: 1.7;
+      color: #333;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <pre>$escaped</pre>
+  </div>
+</body>
+</html>
+"@
+    Set-Content -Path "dist/resources/$htmlName" -Value $htmlContent -Encoding UTF8
+    Write-Host "  Copied 需求文档: $htmlName"
 } else {
     Write-Host "  未找到需求文档，请联系用户确认文件名"
     # 此处应暂停并 AskUserQuestion，询问需求文档文件名
 }
 ```
+
+> **注意**：将 `.md` 转为 `.html` 是为了浏览器可直接预览。`.md` 文件在静态服务器上会被识别为 `application/octet-stream` 或 `text/markdown`，导致浏览器直接下载而非渲染。
 
 ### Step 5: 生成导航首页 index.html
 
@@ -145,7 +192,7 @@ if ($reqDoc) {
 生成 `dist/index.html` 卡片式导航页面，要求：
 - 所有原型链接使用 `target="_blank"` 新标签页打开
 - 页面左下角显示更新时间，格式为「更新于：YYYY-MM-DD HH:mm:ss」，使用 PowerShell 获取构建时刻的固定时间戳（如 `(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')`）直接硬编码到 HTML 中，不可用 JavaScript 动态生成
-- 如果需求文档已复制，在导航页底部增加一个「需求文档」入口链接，点击在新标签页打开
+- 如果需求文档已复制（`dist/resources/需求文档.html`），在导航页底部增加一个「需求文档」入口链接 `<a href="resources/需求文档.html" target="_blank">`，点击在新标签页打开
 
 ### Step 6: 验证目录结构
 
@@ -155,7 +202,7 @@ if ($reqDoc) {
 dist/
 ├── index.html                              (导航首页)
 ├── resources/                              (运行时资源文件)
-│   ├── 需求文档.md                          (需求文档，可选)
+│   ├── 需求文档.html                         (需求文档，可选)
 │   ├── <template.docx>
 │   └── ...
 ├── assets/                                 (其他代码引用的本地资源，可选)
@@ -192,7 +239,7 @@ server {
 ```
 http://your-server/                              → 导航首页
 http://your-server/prototypes/<prototype-name>/   → 单个原型页面
-http://your-server/resources/需求文档.md           → 需求文档（如有）
+http://your-server/resources/需求文档.html           → 需求文档（如有）
 ```
 
 ## 说明
@@ -201,4 +248,4 @@ http://your-server/resources/需求文档.md           → 需求文档（如有
 - **React 从 CDN 加载** — 服务器需要联网。离线部署时需下载 React/ReactDOM UMD 包并本地托管
 - **JS 路径规则**：HTML 在子目录中，JS 在父级 `prototypes/` 文件夹，因此路径为 `../<name>.js`
 - **资源文件**：只复制代码（`.ts`/`.tsx`）中通过字符串引用且实际存在于磁盘上的本地资源文件，不复制未引用的文档或占位文件
-- **需求文档**：导航页会自动包含 `需求文档.md` 入口，如果代码目录中找不到，在执行 skill 时会询问用户确认文件名
+- **需求文档**：导航页会自动包含 `需求文档.html` 入口（将 `.md` 转为 `.html` 以确保浏览器可预览），如果代码目录中找不到，在执行 skill 时会询问用户确认文件名
