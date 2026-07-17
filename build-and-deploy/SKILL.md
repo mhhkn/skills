@@ -135,240 +135,79 @@ if ($reqDoc) {
     $b64 = [System.Convert]::ToBase64String($bytes)
     $htmlName = "$($reqDoc.BaseName).html"
 
-    # HTML 头部和样式部分（使用单引号 here-string 避免 $ 转义问题）
-    $before = @'
+    # HTML 模板（使用单引号 here-string 避免 $ 转义问题，__B64__ 占位符稍后替换）
+    $template = @'
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>需求文档</title>
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js">
-  </script>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-      background: #f0f2f5;
-      color: #333;
-      display: flex;
-      min-height: 100vh;
-    }
-
-    /* ===== Sidebar ===== */
-    .sidebar {
-      width: 270px;
-      flex-shrink: 0;
-      background: #fff;
-      border-right: 1px solid #e8e8e8;
-      position: sticky;
-      top: 0;
-      height: 100vh;
-      overflow-y: auto;
-      z-index: 10;
-    }
-    .sidebar-header {
-      padding: 20px 20px 12px;
-      font-size: 15px;
-      font-weight: 600;
-      color: #1a1a1a;
-      border-bottom: 1px solid #eee;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .toc-item {
-      padding: 6px 20px;
-      font-size: 13px;
-      cursor: pointer;
-      color: #555;
-      line-height: 1.5;
-      transition: all 0.15s;
-      border-left: 3px solid transparent;
-    }
-    .toc-item:hover {
-      color: #1677ff;
-      background: #f0f5ff;
-      border-left-color: #1677ff;
-    }
-    .toc-item.toc-h2 { padding-left: 36px; font-size: 13px; }
-    .toc-item.toc-h3 { padding-left: 52px; font-size: 12.5px; color: #777; }
-    .toc-item.toc-h4 { padding-left: 68px; font-size: 12px; color: #999; }
-
-    /* ===== Main ===== */
-    .main {
-      flex: 1;
-      padding: 40px 48px;
-      max-width: calc(100% - 270px);
-      min-width: 0;
-    }
-
-    /* ===== Toolbar ===== */
-    .toolbar {
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 12px;
-      margin-bottom: 24px;
-    }
-    .toolbar .meta { font-size: 12px; color: #999; }
-    .toggle-btn {
-      padding: 6px 18px;
-      border: 1px solid #d9d9d9;
-      border-radius: 6px;
-      background: #fff;
-      cursor: pointer;
-      font-size: 13px;
-      color: #555;
-      transition: all 0.2s;
-    }
-    .toggle-btn:hover { border-color: #1677ff; color: #1677ff; }
-
-    /* ===== Rendered Content ===== */
-    .content { display: none; }
-    .content.active { display: block; }
-    .content h1 {
-      font-size: 24px; font-weight: 700; color: #1a1a1a;
-      margin: 32px 0 16px; padding-bottom: 10px;
-      border-bottom: 2px solid #1677ff;
-    }
-    .content h1:first-child { margin-top: 0; }
-    .content h2 {
-      font-size: 19px; font-weight: 600; color: #1a1a1a;
-      margin: 28px 0 12px; padding-bottom: 6px;
-      border-bottom: 1px solid #e8e8e8;
-    }
-    .content h3 { font-size: 16px; font-weight: 600; color: #333; margin: 20px 0 10px; }
-    .content h4 { font-size: 14.5px; font-weight: 600; color: #444; margin: 16px 0 8px; }
-    .content p { margin: 8px 0; line-height: 1.75; font-size: 14.5px; }
-    .content ul, .content ol { margin: 6px 0 6px 20px; line-height: 1.75; font-size: 14.5px; }
-    .content li { margin: 3px 0; }
-    .content strong { font-weight: 600; color: #1a1a1a; }
-    .content blockquote {
-      margin: 12px 0; padding: 12px 16px;
-      background: #f6f8fa; border-left: 4px solid #1677ff;
-      border-radius: 4px; font-size: 14px; color: #555;
-    }
-    .content blockquote p { margin: 4px 0; }
-    .content table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13.5px; }
-    .content th { background: #f6f8fa; font-weight: 600; padding: 8px 12px; border: 1px solid #e0e0e0; text-align: left; }
-    .content td { padding: 7px 12px; border: 1px solid #e0e0e0; line-height: 1.6; }
-    .content tr:nth-child(even) { background: #fafafa; }
-    .content code {
-      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-      background: #f0f0f0; padding: 2px 5px; border-radius: 3px;
-      font-size: 13px; color: #d63384;
-    }
-    .content pre {
-      background: #1e1e1e; color: #d4d4d4;
-      padding: 16px 20px; border-radius: 8px; overflow-x: auto;
-      margin: 14px 0; font-size: 13px; line-height: 1.6;
-    }
-    .content pre code { background: none; color: inherit; padding: 0; font-size: inherit; }
-    .content hr { margin: 24px 0; border: none; border-top: 1px solid #e8e8e8; }
-    .content a { color: #1677ff; text-decoration: none; }
-    .content a:hover { text-decoration: underline; }
-
-    /* ===== Raw Content ===== */
-    .raw-content {
-      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-      font-size: 13px; line-height: 1.7;
-      white-space: pre-wrap; word-wrap: break-word;
-      background: #fff; padding: 24px; border-radius: 8px;
-      border: 1px solid #e8e8e8; color: #333;
-    }
-
-    @media (max-width: 820px) {
-      body { flex-direction: column; }
-      .sidebar {
-        width: 100%; height: auto; position: static;
-        max-height: 200px; border-right: none;
-        border-bottom: 1px solid #e8e8e8;
-      }
-      .main { max-width: 100%; padding: 20px; }
-    }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>需求文档</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background:#f0f2f5;color:#333;display:flex;min-height:100vh}
+.sidebar{width:270px;flex-shrink:0;background:#fff;border-right:1px solid #e8e8e8;position:sticky;top:0;height:100vh;overflow-y:auto;z-index:10}
+.sidebar-header{padding:20px 20px 12px;font-size:15px;font-weight:600;color:#1a1a1a;border-bottom:1px solid #eee;display:flex;align-items:center;gap:6px}
+.toc-item{padding:6px 20px;font-size:13px;cursor:pointer;color:#555;line-height:1.5;transition:all .15s;border-left:3px solid transparent}
+.toc-item:hover{color:#1677ff;background:#f0f5ff;border-left-color:#1677ff}
+.toc-h2{padding-left:36px;font-size:13px}
+.toc-h3{padding-left:52px;font-size:12.5px;color:#777}
+.toc-h4{padding-left:68px;font-size:12px;color:#999}
+.main{flex:1;padding:40px 48px;max-width:calc(100% - 270px);min-width:0}
+.toolbar{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-bottom:24px}
+.toolbar .meta{font-size:12px;color:#999}
+.toggle-btn{padding:6px 18px;border:1px solid #d9d9d9;border-radius:6px;background:#fff;cursor:pointer;font-size:13px;color:#555;transition:all .2s}
+.toggle-btn:hover{border-color:#1677ff;color:#1677ff}
+.cd{display:none}.cd.on{display:block}
+.cd h1{font-size:24px;font-weight:700;color:#1a1a1a;margin:32px 0 16px;padding-bottom:10px;border-bottom:2px solid #1677ff}
+.cd h1:first-child{margin-top:0}
+.cd h2{font-size:19px;font-weight:600;color:#1a1a1a;margin:28px 0 12px;padding-bottom:6px;border-bottom:1px solid #e8e8e8}
+.cd h3{font-size:16px;font-weight:600;color:#333;margin:20px 0 10px}
+.cd h4{font-size:14.5px;font-weight:600;color:#444;margin:16px 0 8px}
+.cd p{margin:8px 0;line-height:1.75;font-size:14.5px}
+.cd ul,.cd ol{margin:6px 0 6px 20px;line-height:1.75;font-size:14.5px}
+.cd li{margin:3px 0}
+.cd strong{font-weight:600;color:#1a1a1a}
+.cd blockquote{margin:12px 0;padding:12px 16px;background:#f6f8fa;border-left:4px solid #1677ff;border-radius:4px;font-size:14px;color:#555}
+.cd blockquote p{margin:4px 0}
+.cd table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.5px}
+.cd th{background:#f6f8fa;font-weight:600;padding:8px 12px;border:1px solid #e0e0e0;text-align:left}
+.cd td{padding:7px 12px;border:1px solid #e0e0e0;line-height:1.6}
+.cd tr:nth-child(even){background:#fafafa}
+.cd code{font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;background:#f0f0f0;padding:2px 5px;border-radius:3px;font-size:13px;color:#d63384}
+.cd pre{background:#1e1e1e;color:#d4d4d4;padding:16px 20px;border-radius:8px;overflow-x:auto;margin:14px 0;font-size:13px;line-height:1.6}
+.cd pre code{background:none;color:inherit;padding:0;font-size:inherit}
+.cd hr{margin:24px 0;border:none;border-top:1px solid #e8e8e8}
+.cd a{color:#1677ff;text-decoration:none}
+.cd a:hover{text-decoration:underline}
+.raw-c{font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:13px;line-height:1.7;white-space:pre-wrap;word-wrap:break-word;background:#fff;padding:24px;border-radius:8px;border:1px solid #e8e8e8;color:#333}
+@media(max-width:820px){body{flex-direction:column}.sidebar{width:100%;height:auto;position:static;max-height:200px;border-right:none;border-bottom:1px solid #e8e8e8}.main{max-width:100%;padding:20px}}
+</style>
 </head>
 <body>
-  <aside class="sidebar">
-    <div class="sidebar-header">📑 目录</div>
-    <div id="toc"></div>
-  </aside>
-  <main class="main">
-    <div class="toolbar">
-      <span class="meta" id="metaInfo"></span>
-      <button class="toggle-btn" id="toggleBtn">切换为纯文本</button>
-    </div>
-    <div class="content active" id="rendered"></div>
-    <div class="content" id="raw"></div>
-  </main>
-  <script>
-'@
-    $after = @'
-    function decodeBase64(str) {
-      var bytes = Uint8Array.from(atob(str), function(c) { return c.charCodeAt(0); });
-      return new TextDecoder("utf-8").decode(bytes);
-    }
-    var markdown = decodeBase64("'@ + $b64 + @'");
-
-    // --- Render markdown ---
-    document.getElementById("rendered").innerHTML = marked.parse(markdown);
-    document.getElementById("raw").innerHTML = '<div class="raw-content">' + markdown.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;") + '</div>';
-    document.getElementById("metaInfo").textContent = "共 " + markdown.length + " 字";
-
-    // --- Build Table of Contents from headings ---
-    var tokens = marked.lexer(markdown);
-    var tocEl = document.getElementById("toc");
-    var headingCount = {};
-    tokens.forEach(function(token) {
-      if (token.type === "heading" && token.depth <= 4) {
-        var text = token.text;
-        var raw = text.toLowerCase().replace(/[^\w\u4e00-\u9fff]+/g, "-").replace(/^-+|-+$/g, "") || "heading";
-        headingCount[raw] = (headingCount[raw] || 0) + 1;
-        var id = raw + (headingCount[raw] > 1 ? "-" + headingCount[raw] : "");
-        var div = document.createElement("div");
-        div.className = "toc-item toc-h" + token.depth;
-        div.textContent = text;
-        div.addEventListener("click", function() {
-          var el = document.getElementById(id);
-          if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-        });
-        tocEl.appendChild(div);
-      }
-    });
-
-    // --- Toggle between rendered and raw view ---
-    document.getElementById("toggleBtn").addEventListener("click", function() {
-      var rend = document.getElementById("rendered");
-      var raw = document.getElementById("raw");
-      var isRaw = raw.classList.contains("active");
-      rend.classList.toggle("active", isRaw);
-      raw.classList.toggle("active", !isRaw);
-      this.textContent = isRaw ? "切换为纯文本" : "切换为排版视图";
-    });
-
-    // --- Scroll-spy: highlight current TOC item ---
-    var tocItems = document.querySelectorAll(".toc-item");
-    var headings = document.querySelectorAll("#rendered h1, #rendered h2, #rendered h3, #rendered h4");
-    if (headings.length > 0) {
-      window.addEventListener("scroll", function() {
-        var current = -1;
-        var scrollTop = window.scrollY + 80;
-        for (var i = 0; i < headings.length; i++) {
-          if (headings[i].offsetTop <= scrollTop) current = i;
-        }
-        tocItems.forEach(function(item) { item.style.fontWeight = "normal"; item.style.color = ""; });
-        if (current >= 0 && tocItems[current]) {
-          tocItems[current].style.fontWeight = "600";
-          tocItems[current].style.color = "#1677ff";
-        }
-      });
-    }
-  </script>
+<aside class="sidebar"><div class="sidebar-header">📑 目录</div><div id="toc"></div></aside>
+<main class="main">
+<div class="toolbar"><span class="meta" id="metaInfo"></span><button class="toggle-btn" id="toggleBtn">切换为纯文本</button></div>
+<div class="cd on" id="rendered"></div>
+<div class="cd" id="raw"></div>
+</main>
+<script>
+var b64="__B64__";
+var md=(function(s){var b=Uint8Array.from(atob(s),function(c){return c.charCodeAt(0)});return new TextDecoder("utf-8").decode(b)})(b64);
+document.getElementById("rendered").innerHTML=marked.parse(md);
+document.getElementById("raw").innerHTML='<div class="raw-c">'+md.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")+'</div>';
+document.getElementById("metaInfo").textContent="共 "+md.length+" 字";
+var tks=marked.lexer(md),toc=document.getElementById("toc"),hc={};
+tks.forEach(function(t){if(t.type==="heading"&&t.depth<=4){var txt=t.text,s=txt.toLowerCase().replace(/[^\w\u4e00-\u9fff]+/g,"-").replace(/^-+|-+$/g,"")||"h";hc[s]=(hc[s]||0)+1;var id=s+(hc[s]>1?"-"+hc[s]:""),d=document.createElement("div");d.className="toc-item toc-h"+t.depth;d.textContent=txt;d.addEventListener("click",function(){var e=document.getElementById(id);if(e)e.scrollIntoView({behavior:"smooth",block:"start"})});toc.appendChild(d)}});
+document.getElementById("toggleBtn").addEventListener("click",function(){var r=document.getElementById("rendered"),w=document.getElementById("raw"),rv=w.classList.contains("on");r.classList.toggle("on",rv);w.classList.toggle("on",!rv);this.textContent=rv?"切换为纯文本":"切换为排版视图"});
+var ti=document.querySelectorAll(".toc-item"),hg=document.querySelectorAll("#rendered h1,#rendered h2,#rendered h3,#rendered h4");
+if(hg.length>0){window.addEventListener("scroll",function(){var cur=-1,st=window.scrollY+80;for(var i=0;i<hg.length;i++){if(hg[i].offsetTop<=st)cur=i}ti.forEach(function(it){it.style.fontWeight="normal";it.style.color=""});if(cur>=0&&ti[cur]){ti[cur].style.fontWeight="600";ti[cur].style.color="#1677ff"}})}
+</script>
 </body>
 </html>
 '@
-    $htmlContent = $before + $after
+    $htmlContent = $template -replace '__B64__', $b64
     Set-Content -Path "dist/resources/$htmlName" -Value $htmlContent -Encoding UTF8
     Write-Host "  Copied 需求文档: $htmlName ($($htmlContent.Length) bytes)"
 } else {
