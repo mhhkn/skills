@@ -144,7 +144,7 @@ if ($reqDoc) {
 
 生成 `dist/index.html` 卡片式导航页面，要求：
 - 所有原型链接使用 `target="_blank"` 新标签页打开
-- 页面左下角显示更新时间，格式为「更新于：YYYY-MM-DD HH:mm:ss」，使用 JavaScript 动态生成
+- 页面左下角显示更新时间，格式为「更新于：YYYY-MM-DD HH:mm:ss」，使用 PowerShell 获取构建时刻的固定时间戳（如 `(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')`）直接硬编码到 HTML 中，不可用 JavaScript 动态生成
 - 如果需求文档已复制，在导航页底部增加一个「需求文档」入口链接，点击在新标签页打开
 
 ### Step 6: 验证目录结构
