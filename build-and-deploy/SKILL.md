@@ -129,59 +129,255 @@ if (-not $reqDoc) {
 if ($reqDoc) {
     New-Item -ItemType Directory -Force -Path "dist/resources" | Out-Null
 
-    # 读取 markdown 内容并转为 HTML，确保浏览器可预览（不触发下载）
+    # 读取 markdown 内容，Base64 编码后嵌入到增强 HTML 模板中
     $mdText = [System.IO.File]::ReadAllText($reqDoc.FullName)
-    $escaped = [System.Net.WebUtility]::HtmlEncode($mdText)
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($mdText)
+    $b64 = [System.Convert]::ToBase64String($bytes)
     $htmlName = "$($reqDoc.BaseName).html"
-    $htmlContent = @"
+
+    # HTML 头部和样式部分（使用单引号 here-string 避免 $ 转义问题）
+    $before = @'
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>$($reqDoc.BaseName)</title>
+  <title>需求文档</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js">
+  </script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-      background: #f5f5f5;
+      background: #f0f2f5;
       color: #333;
-      padding: 40px 20px;
+      display: flex;
+      min-height: 100vh;
     }
-    .container {
-      max-width: 900px;
-      margin: 0 auto;
+
+    /* ===== Sidebar ===== */
+    .sidebar {
+      width: 270px;
+      flex-shrink: 0;
       background: #fff;
-      border-radius: 8px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-      padding: 40px;
+      border-right: 1px solid #e8e8e8;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      z-index: 10;
     }
-    pre {
-      white-space: pre-wrap;
-      word-wrap: break-word;
+    .sidebar-header {
+      padding: 20px 20px 12px;
+      font-size: 15px;
+      font-weight: 600;
+      color: #1a1a1a;
+      border-bottom: 1px solid #eee;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .toc-item {
+      padding: 6px 20px;
+      font-size: 13px;
+      cursor: pointer;
+      color: #555;
+      line-height: 1.5;
+      transition: all 0.15s;
+      border-left: 3px solid transparent;
+    }
+    .toc-item:hover {
+      color: #1677ff;
+      background: #f0f5ff;
+      border-left-color: #1677ff;
+    }
+    .toc-item.toc-h2 { padding-left: 36px; font-size: 13px; }
+    .toc-item.toc-h3 { padding-left: 52px; font-size: 12.5px; color: #777; }
+    .toc-item.toc-h4 { padding-left: 68px; font-size: 12px; color: #999; }
+
+    /* ===== Main ===== */
+    .main {
+      flex: 1;
+      padding: 40px 48px;
+      max-width: calc(100% - 270px);
+      min-width: 0;
+    }
+
+    /* ===== Toolbar ===== */
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    .toolbar .meta { font-size: 12px; color: #999; }
+    .toggle-btn {
+      padding: 6px 18px;
+      border: 1px solid #d9d9d9;
+      border-radius: 6px;
+      background: #fff;
+      cursor: pointer;
+      font-size: 13px;
+      color: #555;
+      transition: all 0.2s;
+    }
+    .toggle-btn:hover { border-color: #1677ff; color: #1677ff; }
+
+    /* ===== Rendered Content ===== */
+    .content { display: none; }
+    .content.active { display: block; }
+    .content h1 {
+      font-size: 24px; font-weight: 700; color: #1a1a1a;
+      margin: 32px 0 16px; padding-bottom: 10px;
+      border-bottom: 2px solid #1677ff;
+    }
+    .content h1:first-child { margin-top: 0; }
+    .content h2 {
+      font-size: 19px; font-weight: 600; color: #1a1a1a;
+      margin: 28px 0 12px; padding-bottom: 6px;
+      border-bottom: 1px solid #e8e8e8;
+    }
+    .content h3 { font-size: 16px; font-weight: 600; color: #333; margin: 20px 0 10px; }
+    .content h4 { font-size: 14.5px; font-weight: 600; color: #444; margin: 16px 0 8px; }
+    .content p { margin: 8px 0; line-height: 1.75; font-size: 14.5px; }
+    .content ul, .content ol { margin: 6px 0 6px 20px; line-height: 1.75; font-size: 14.5px; }
+    .content li { margin: 3px 0; }
+    .content strong { font-weight: 600; color: #1a1a1a; }
+    .content blockquote {
+      margin: 12px 0; padding: 12px 16px;
+      background: #f6f8fa; border-left: 4px solid #1677ff;
+      border-radius: 4px; font-size: 14px; color: #555;
+    }
+    .content blockquote p { margin: 4px 0; }
+    .content table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13.5px; }
+    .content th { background: #f6f8fa; font-weight: 600; padding: 8px 12px; border: 1px solid #e0e0e0; text-align: left; }
+    .content td { padding: 7px 12px; border: 1px solid #e0e0e0; line-height: 1.6; }
+    .content tr:nth-child(even) { background: #fafafa; }
+    .content code {
       font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-      font-size: 14px;
-      line-height: 1.7;
-      color: #333;
+      background: #f0f0f0; padding: 2px 5px; border-radius: 3px;
+      font-size: 13px; color: #d63384;
+    }
+    .content pre {
+      background: #1e1e1e; color: #d4d4d4;
+      padding: 16px 20px; border-radius: 8px; overflow-x: auto;
+      margin: 14px 0; font-size: 13px; line-height: 1.6;
+    }
+    .content pre code { background: none; color: inherit; padding: 0; font-size: inherit; }
+    .content hr { margin: 24px 0; border: none; border-top: 1px solid #e8e8e8; }
+    .content a { color: #1677ff; text-decoration: none; }
+    .content a:hover { text-decoration: underline; }
+
+    /* ===== Raw Content ===== */
+    .raw-content {
+      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+      font-size: 13px; line-height: 1.7;
+      white-space: pre-wrap; word-wrap: break-word;
+      background: #fff; padding: 24px; border-radius: 8px;
+      border: 1px solid #e8e8e8; color: #333;
+    }
+
+    @media (max-width: 820px) {
+      body { flex-direction: column; }
+      .sidebar {
+        width: 100%; height: auto; position: static;
+        max-height: 200px; border-right: none;
+        border-bottom: 1px solid #e8e8e8;
+      }
+      .main { max-width: 100%; padding: 20px; }
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <pre>$escaped</pre>
-  </div>
+  <aside class="sidebar">
+    <div class="sidebar-header">📑 目录</div>
+    <div id="toc"></div>
+  </aside>
+  <main class="main">
+    <div class="toolbar">
+      <span class="meta" id="metaInfo"></span>
+      <button class="toggle-btn" id="toggleBtn">切换为纯文本</button>
+    </div>
+    <div class="content active" id="rendered"></div>
+    <div class="content" id="raw"></div>
+  </main>
+  <script>
+'@
+    $after = @'
+    function decodeBase64(str) {
+      var bytes = Uint8Array.from(atob(str), function(c) { return c.charCodeAt(0); });
+      return new TextDecoder("utf-8").decode(bytes);
+    }
+    var markdown = decodeBase64("'@ + $b64 + @'");
+
+    // --- Render markdown ---
+    document.getElementById("rendered").innerHTML = marked.parse(markdown);
+    document.getElementById("raw").innerHTML = '<div class="raw-content">' + markdown.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;") + '</div>';
+    document.getElementById("metaInfo").textContent = "共 " + markdown.length + " 字";
+
+    // --- Build Table of Contents from headings ---
+    var tokens = marked.lexer(markdown);
+    var tocEl = document.getElementById("toc");
+    var headingCount = {};
+    tokens.forEach(function(token) {
+      if (token.type === "heading" && token.depth <= 4) {
+        var text = token.text;
+        var raw = text.toLowerCase().replace(/[^\w\u4e00-\u9fff]+/g, "-").replace(/^-+|-+$/g, "") || "heading";
+        headingCount[raw] = (headingCount[raw] || 0) + 1;
+        var id = raw + (headingCount[raw] > 1 ? "-" + headingCount[raw] : "");
+        var div = document.createElement("div");
+        div.className = "toc-item toc-h" + token.depth;
+        div.textContent = text;
+        div.addEventListener("click", function() {
+          var el = document.getElementById(id);
+          if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+        tocEl.appendChild(div);
+      }
+    });
+
+    // --- Toggle between rendered and raw view ---
+    document.getElementById("toggleBtn").addEventListener("click", function() {
+      var rend = document.getElementById("rendered");
+      var raw = document.getElementById("raw");
+      var isRaw = raw.classList.contains("active");
+      rend.classList.toggle("active", isRaw);
+      raw.classList.toggle("active", !isRaw);
+      this.textContent = isRaw ? "切换为纯文本" : "切换为排版视图";
+    });
+
+    // --- Scroll-spy: highlight current TOC item ---
+    var tocItems = document.querySelectorAll(".toc-item");
+    var headings = document.querySelectorAll("#rendered h1, #rendered h2, #rendered h3, #rendered h4");
+    if (headings.length > 0) {
+      window.addEventListener("scroll", function() {
+        var current = -1;
+        var scrollTop = window.scrollY + 80;
+        for (var i = 0; i < headings.length; i++) {
+          if (headings[i].offsetTop <= scrollTop) current = i;
+        }
+        tocItems.forEach(function(item) { item.style.fontWeight = "normal"; item.style.color = ""; });
+        if (current >= 0 && tocItems[current]) {
+          tocItems[current].style.fontWeight = "600";
+          tocItems[current].style.color = "#1677ff";
+        }
+      });
+    }
+  </script>
 </body>
 </html>
-"@
+'@
+    $htmlContent = $before + $after
     Set-Content -Path "dist/resources/$htmlName" -Value $htmlContent -Encoding UTF8
-    Write-Host "  Copied 需求文档: $htmlName"
+    Write-Host "  Copied 需求文档: $htmlName ($($htmlContent.Length) bytes)"
 } else {
     Write-Host "  未找到需求文档，请联系用户确认文件名"
     # 此处应暂停并 AskUserQuestion，询问需求文档文件名
 }
 ```
 
-> **注意**：将 `.md` 转为 `.html` 是为了浏览器可直接预览。`.md` 文件在静态服务器上会被识别为 `application/octet-stream` 或 `text/markdown`，导致浏览器直接下载而非渲染。
+> **注意**：将 `.md` 转为 `.html` 是为了浏览器可直接预览。`.md` 文件在静态服务器上会被识别为 `application/octet-stream` 或 `text/markdown`，导致浏览器直接下载而非渲染。生成的 HTML 使用 marked.js 从 CDN 加载实现客户端排版渲染，并自动从标题生成左侧目录索引，支持排版/纯文本切换。
 
 ### Step 5: 生成导航首页 index.html
 
